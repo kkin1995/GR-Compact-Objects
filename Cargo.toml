@@ -1,0 +1,14 @@
+[package]
+name = "gr_compact_objects"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[lib]
+name = "gr_compact_objects"
+path = "src/lib.rs"
+
+[workspace]
+members = ["research_project"]
+
