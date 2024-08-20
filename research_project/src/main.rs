@@ -1,7 +1,6 @@
 use gr_compact_objects::rk4::{Derivatives, RK4Solver, State};
 use std::io::{Result, Write};
 use std::fs::File;
-use std::os::macos::raw::stat;
 
 struct StellarStructure {
     k: f64,
@@ -23,13 +22,15 @@ impl Derivatives<f64> for StellarStructure {
         let log_rho: f64 = (log_p - self.k.log10()) / self.gamma;
         // let rho: f64 = (p / self.k).powf(1.0 / self.gamma);
 
-        let dlogm_dlogr: f64 = 4.0 * std::f64::consts::PI * base.powf(log_r).powi(3) * base.powf(log_rho) / base.powf(log_m);
-        let dlogp_dlogr: f64 = - self.g * base.powf(log_m) * base.powf(log_rho) / (base.powf(log_p) * base.powf(log_r));
+        // let dlogm_dlogr: f64 = 4.0 * std::f64::consts::PI * base.powf(log_r).powi(3) * base.powf(log_rho) / base.powf(log_m);
+        // let dlogp_dlogr: f64 = - self.g * base.powf(log_m) * base.powf(log_rho) / (base.powf(log_p) * base.powf(log_r));
+
+        let dlogm_dlogr: f64 = 4.0 * std::f64::consts::PI * base.powf(log_r + epsilon).powi(3) * base.powf(log_rho + epsilon) / base.powf(log_m + epsilon);
+        let dlogp_dlogr: f64 = - self.g * base.powf(log_m + epsilon) * base.powf(log_rho + epsilon) / (base.powf(log_p + epsilon) * base.powf(log_r + epsilon));
         // let dm_dr: f64 = 4.0 * std::f64::consts::PI * r * r * rho;
         // let dp_dr: f64 = - self.g * m * rho / (r * r);
         
-        // println!("Debug: r: {:.2e} log_r: {:.2e} m: {:.2e} log_m: {:.2e} P: {:2e} log_p: {:.2e} rho: {:2e} log_rho: {:.2e} dlogm_dlogr: {:2e} dlogp_dlogr: {:2e}",
-        //                 base.powf(log_r), log_r, base.powf(log_m), log_m, base.powf(log_p), log_p, base.powf(log_rho), log_rho, dlogm_dlogr, dlogp_dlogr);
+        println!("Debug:\t{:.2e}\t{:.2e}\t{:.2e}\t{:.2e}\t{:.2e}\t{:.2e}\t{:.2e}\t{:.2e}\t{:.2e}\t{:.2e}", base.powf(log_r), log_r, base.powf(log_m), log_m, base.powf(log_p), log_p, base.powf(log_rho), log_rho, dlogm_dlogr, dlogp_dlogr);
 
         State {
             values: vec![dlogm_dlogr, dlogp_dlogr]
@@ -38,17 +39,24 @@ impl Derivatives<f64> for StellarStructure {
 }
 
 fn main() -> Result<()> {
+    let base: f64 = 10.0;
+
     let stellar_structure = StellarStructure {
         k: 5.3802e9, // CGS
         gamma: 5.0 / 3.0, // Non-Relativistic Fermion Gas
         g: 6.67430e-8, // Gravitational Constant // CGS
     };
 
-    let r_start: f64 = 100.0;
+    let r_start: f64 = 1.0;
     let log_r_start: f64 = r_start.log10();
     let r_end: f64 = 1e6;
     let log_r_end: f64 = r_end.log10();
-    let dr: f64 = 1.0;
+    
+    let mut log_dr: f64 = 0.01;
+    let mut dr: f64 = base.powf(log_dr);
+    // let log_dr_min: f64 = 1e-6;
+    // let log_dr_max: f64 = 0.1;
+    // let log_tolerance: f64 = 0.05;
 
     let rho_c: f64 = 1e12;
     let log_rho_c: f64 = rho_c.log10();
@@ -62,33 +70,47 @@ fn main() -> Result<()> {
 
     let solver: RK4Solver<f64, StellarStructure> = RK4Solver::new(stellar_structure, dr);
 
-    // let mut file = File::create("stellar_structure.csv")?;
-
-    // writeln!(file, "r,m,P")?;
+    let mut file = File::create("stellar_structure.csv")?;
+    writeln!(file, "r,m,P")?;
 
     let mut r: f64 = r_start;
     let mut log_r: f64 = log_r_start;
 
-    let pressure_threshold: f64 = 1e-10;
+    let pressure_threshold: f64 = 1.1;
     let log_pressure_threshold: f64 = pressure_threshold.log10();
 
-    let base: f64 = 10.0;
-    while r < r_end {
-        // writeln!(file, "{},{},{}", r, base.powf(state.values[0]), base.powf(state.values[1]))?;
-        println!("r: {:.2}, m: {:.6e}, P: {:.6e}", r, base.powf(state.values[0]), base.powf(state.values[1]));
+    println!("Debug:\tr\tlog_r\tm\tlog_m\tP\tlog_p\trho\tlog_rho\tdlogm_dlogr\tdlogp_dlogr");
+    while log_r < log_r_end {
+        writeln!(file, "{},{},{}", base.powf(log_r), base.powf(state.values[0]), base.powf(state.values[1]))?;
+        // println!("r: {:.2}, m: {:.6e}, P: {:.6e}", base.powf(log_r), base.powf(state.values[0]), base.powf(state.values[1]));
+
+        let prev_log_p: f64 = state.values[1];
+        if prev_log_p.is_nan() {
+            println!("Surface or Instability Detected at r = {:.2e}, m = {:.2e}, P = {:.2e}", base.powf(log_r), base.powf(state.values[0]), base.powf(state.values[1]));
+            break;
+        }
+
         state = solver.step(log_r, &state);
 
-        r += dr;
-        log_r = r.log10();
+        log_r += log_dr;
+
+        // let delta_log_p: f64 = prev_log_p - state.values[1];
+        // if delta_log_p.abs() > log_tolerance {
+        //     log_dr = (log_dr * 0.1).max(log_dr_min);
+        //     println!("Decreasing Step Size dr to: {:.2e}", log_dr);
+        // } else if delta_log_p.abs() < log_tolerance * 0.5 {
+        //     log_dr = (log_dr * 1.1).min(log_dr_max);
+        //     println!("Increasing Step Size dr to: {:.2e}", log_dr);
+        // }
 
         if state.values[1] < log_pressure_threshold {
-            println!("Surface Detected At r = {:.2e}, m = {:.2e}, P = {:.2e}", r, base.powf(state.values[0]), base.powf(state.values[1]));
+            println!("Surface Detected At r = {:.2e}, m = {:.2e}, P = {:.2e}", base.powf(log_r), base.powf(state.values[0]), base.powf(state.values[1]));
             break;
         }
     }
 
-    println!("Final Mass: {}", state.values[0]);
-    println!("Final Pressure: {}", state.values[1]);
+    println!("Final Mass: {}", base.powf(state.values[0]));
+    println!("Final Pressure: {}", base.powf(state.values[1]));
 
     Ok(())
 }
