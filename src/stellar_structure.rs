@@ -101,20 +101,35 @@ impl Derivatives<f64> for StellarStructure {
     /// A `State<f64>` containing the derivatives of the logarithmic mass and pressure.
     fn derivatives(&self, log_r: f64, state: &State<f64>) -> State<f64> {
         let epsilon: f64 = 1e-10; // Regularization Term
-
+        let relative_epsilon = |x: f64| epsilon + x.abs().max(1.0);
         let log_m: f64 = state.values[0];
         let log_p: f64 = state.values[1];
 
         let base: f64 = 10.0;
         let log_rho: f64 = (log_p - self.constants.k.log10()) / self.constants.gamma;
         
-        if log_r.is_nan() || log_m.is_nan() || log_p.is_nan() || log_rho.is_nan() {
+        if log_r.is_nan() || log_m.is_nan() || log_p.is_nan() || log_rho.is_nan() ||
+        log_r.is_infinite() || log_m.is_infinite() || log_p.is_infinite() || log_rho.is_infinite() {
             return State { values: vec![f64::NAN, f64::NAN] };
         }
 
-        let dlogm_dlogr: f64 = 4.0 * std::f64::consts::PI * base.powf(log_r + epsilon).powi(3) * base.powf(log_rho + epsilon) / base.powf(log_m + epsilon);
-        let dlogp_dlogr: f64 = - self.constants.g * base.powf(log_m + epsilon) * base.powf(log_rho + epsilon) / (base.powf(log_p + epsilon) * base.powf(log_r + epsilon));
-    
+        let safe_log_m = log_m + relative_epsilon(log_m);
+        let safe_log_p = log_p + relative_epsilon(log_p);
+        let safe_log_r = log_r + relative_epsilon(log_r);
+        let safe_log_rho = log_rho + relative_epsilon(log_rho);
+
+        if safe_log_r.is_sign_negative() || safe_log_m.is_sign_negative() || safe_log_p.is_sign_negative() || safe_log_rho.is_sign_negative() {
+            return State { values: vec![f64::NAN, f64::NAN] };
+        }
+
+        let dlogm_dlogr: f64 = 4.0 * std::f64::consts::PI * (safe_log_r * base.ln()).exp().powi(3) * (safe_log_rho * base.ln()).exp() / (safe_log_m * base.ln()).exp();
+        let dlogp_dlogr: f64 = - self.constants.g * (safe_log_m * base.ln()).exp() * (safe_log_rho * base.ln()).exp() / ((safe_log_p * base.ln()).exp() * (safe_log_r * base.ln()).exp());
+        
+        if !dlogm_dlogr.is_finite() || !dlogp_dlogr.is_finite() ||
+        dlogm_dlogr.abs() > 1e30 || dlogm_dlogr > 1e30 {
+            println!("Warning: Extreme Derivate Values Detected At log_r = {:2e}", log_r);
+            return State { values: vec![f64::NAN, f64::NAN] };
+        }
 
         State {
             values: vec![dlogm_dlogr, dlogp_dlogr]
@@ -169,7 +184,7 @@ impl StellarModel {
     /// 
     /// # Arguments
     /// 
-    /// * - `output_file` - The path to the file where the results will be written.
+    /// * `output_file` - The path to the file where the results will be written.
     /// 
     /// # Returns
     /// 
@@ -204,7 +219,7 @@ impl StellarModel {
         while log_r < log_r_end {
             self.write_state_to_file(&mut file, log_r, &state)?;
     
-            if self.is_terminationn_condition_met(log_r, &state, log_p0) {
+            if self.is_terminationn_condition_met(log_r, &state, _log_pressure_threshold) {
                 break;
             }
     
@@ -244,13 +259,13 @@ impl StellarModel {
     /// * `log_r` - The logarithm of the current radius.
     /// * `state` - THe current state, containing the logarithmic mass and pressure.
     /// * `log_p0` - The initial logarithmic pressure value.
-    fn is_terminationn_condition_met(&self, log_r: f64, state: &State<f64>, log_p0: f64) -> bool {
+    fn is_terminationn_condition_met(&self, log_r: f64, state: &State<f64>, _log_pressure_threshold: f64) -> bool {
         let base: f64 = 10.0;
         if state.values[1].is_nan() {
             println!("Instability Detected at r = {:.2e}, m = {:.2e}, P = {:.2e}", base.powf(log_r), base.powf(state.values[0]), base.powf(state.values[1]));
             return true;
         }
-        if state.values[1] < log_p0 - 10.0 || log_r > 6.3 { // log10(1e6) = 6
+        if state.values[1] < _log_pressure_threshold {//|| log_r > 6.3 { // log10(1e6) = 6
             println!("Surface Detected At r = {:.2e}, m = {:.2e}, P = {:.2e}", base.powf(log_r), base.powf(state.values[0]), base.powf(state.values[1]));
             return true;
         }
