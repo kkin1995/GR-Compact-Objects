@@ -49,7 +49,7 @@ fn main() -> Result<()> {
 
     let r_start: f64 = 1.0;
     let log_r_start: f64 = r_start.log10();
-    let r_end: f64 = 1e6;
+    let r_end: f64 = 1e7;
     let log_r_end: f64 = r_end.log10();
     
     let mut log_dr: f64 = 0.01;
@@ -68,9 +68,9 @@ fn main() -> Result<()> {
 
     let mut state: State<f64> = State { values: vec![log_m0, log_p0] };
 
-    let solver: RK4Solver<f64, StellarStructure> = RK4Solver::new(stellar_structure, dr);
+    let solver: RK4Solver<f64, StellarStructure> = RK4Solver::new(stellar_structure, log_dr);
 
-    let mut file = File::create("stellar_structure.csv")?;
+    let mut file = File::create("stellar_structure_1.csv")?;
     writeln!(file, "r,m,P")?;
 
     let mut r: f64 = r_start;
