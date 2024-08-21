@@ -41,3 +41,4 @@
 //!
 //! - [`rk4`](rk4): Contains the implementation of the RK4 solver.
 pub mod rk4;
+pub mod stellar_structure;

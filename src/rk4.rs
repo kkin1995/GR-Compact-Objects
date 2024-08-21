@@ -30,12 +30,12 @@ pub trait Derivatives<T> {
 }
 
 /// RK4 solver for systems of ordinary differential equations.
-pub struct RK4Solver<T, D: Derivatives<T>> {
-    derivatives: D,
+pub struct RK4Solver<'a, T, D: Derivatives<T>> {
+    derivatives: &'a D,
     dt: T,
 }
 
-impl<T, D> RK4Solver<T, D>
+impl<'a, T, D> RK4Solver<'a, T, D>
 where
     T: Copy
         + std::ops::Add<Output = T>
@@ -54,7 +54,7 @@ where
     /// # Returns
     ///
     /// A new `RK4Solver` instance.
-    pub fn new(derivatives: D, dt: T) -> Self {
+    pub fn new(derivatives: &'a D, dt: T) -> Self {
         RK4Solver { derivatives, dt }
     }
 
