@@ -3,9 +3,12 @@
 //! This module provides a generic implementation of the RK4 method,
 //! suitable for solving a wide range of initial value problems.
 
+use std::clone::Clone;
+
 /// Represents the state of a system at a given time.
 ///
 /// The state can contain any number of variables, each of type `T`.
+#[derive(Clone)]
 pub struct State<T> {
     /// The values of the state variables.
     pub values: Vec<T>,
