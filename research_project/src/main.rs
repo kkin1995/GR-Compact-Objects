@@ -22,13 +22,13 @@ fn create_neutron_star_model(params: NeutronStarParams) -> StellarModel {
     };
 
     let integration_params = IntegrationParams {
-        log_dr: 0.1,
+        log_dr: 0.01,
         surface_pressure_threshold: 1.1
     };
 
     StellarModel::new(
         constants,
-        10.0,
+        100.0,
         1e10,
         params.central_density,
         Some(integration_params)
@@ -42,7 +42,7 @@ fn run_neutron_star_simulation(params: NeutronStarParams, output_file: &str) -> 
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let n: i32 = 11; // Replace this with the desired number of values
-    let gas_type: &str = "relativistic_electron_gas";
+    let gas_type: &str = "relativistic_neutron_gas";
 
     let (mut start, mut end, mut k, mut gamma): (f64, f64, f64, f64) = (0.0, 0.0, 0.0, 0.0);
 
@@ -78,18 +78,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             10f64.powf(start + t * (end - start))
         })
         .collect();
-
-    let mut file = File::create("central_density_enumeration.csv")?;
+    
+    let start_density: f64 = central_densities[0];
+    let end_density: f64 = central_densities[central_densities.len() - 1];
+    let summary_file: String = format!("/Users/karankinariwala/Dropbox/KARAN/2 Areas/Education/PhD/gr_compact_objects/research_project/data/{gas_type}_summary_{start_density:.2e}_to_{end_density:.2e}.csv");
+    let mut file = File::create(&summary_file)?;
     writeln!(file, "Central_Density,Mass,Radius,Pressure")?;
 
     for (i, &central_density) in central_densities.iter().enumerate() {
         let params = NeutronStarParams::new(
-            4.0 / 3.0, // 5.0 / 3.0,
-            1.2293e15, // 5.3802e9,
+            gamma,
+            k,
             central_density
         );
 
-        let output_file: String = format!("data/{gas_type}_profile_central_density_{central_density:.2e}.csv");
+        let output_file: String = format!("/Users/karankinariwala/Dropbox/KARAN/2 Areas/Education/PhD/gr_compact_objects/research_project/data/{gas_type}_profile_central_density_{central_density:.2e}.csv");
         
         match run_neutron_star_simulation(params, &output_file) {
             Ok((final_radius, final_mass, final_pressure)) => {
