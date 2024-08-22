@@ -7,6 +7,7 @@
 use crate::rk4::{Derivatives, RK4Solver, State};
 use std::fs::File;
 use std::io::Write;
+use std::f64::consts::PI;
 use std::io::Error as IoError;
 use thiserror::Error;
 
@@ -101,7 +102,7 @@ impl Derivatives<f64> for StellarStructure {
     /// A `State<f64>` containing the derivatives of the logarithmic mass and pressure.
     fn derivatives(&self, log_r: f64, state: &State<f64>) -> State<f64> {
         let epsilon: f64 = 1e-10; // Regularization Term
-        let relative_epsilon = |x: f64| epsilon + x.abs().max(1.0);
+        let relative_epsilon = |x: f64| epsilon * (1.0 + x.abs());
         let log_m: f64 = state.values[0];
         let log_p: f64 = state.values[1];
 
@@ -122,8 +123,11 @@ impl Derivatives<f64> for StellarStructure {
             return State { values: vec![f64::NAN, f64::NAN] };
         }
 
-        let dlogm_dlogr: f64 = 4.0 * std::f64::consts::PI * (safe_log_r * base.ln()).exp().powi(3) * (safe_log_rho * base.ln()).exp() / (safe_log_m * base.ln()).exp();
-        let dlogp_dlogr: f64 = - self.constants.g * (safe_log_m * base.ln()).exp() * (safe_log_rho * base.ln()).exp() / ((safe_log_p * base.ln()).exp() * (safe_log_r * base.ln()).exp());
+        // let dlogm_dlogr: f64 = 4.0 * std::f64::consts::PI * (safe_log_r * base.ln()).exp().powi(3) * (safe_log_rho * base.ln()).exp() / (safe_log_m * base.ln()).exp();
+        // let dlogp_dlogr: f64 = - self.constants.g * (safe_log_m * base.ln()).exp() * (safe_log_rho * base.ln()).exp() / ((safe_log_p * base.ln()).exp() * (safe_log_r * base.ln()).exp());
+
+        let dlogm_dlogr: f64 = (4.0 * PI * base.powf(safe_log_r).powf(3.0) * base.powf(safe_log_rho)) / base.powf(safe_log_m);
+        let dlogp_dlogr: f64 = - (self.constants.g * base.powf(safe_log_m) * base.powf(safe_log_rho)) / (base.powf(safe_log_p) * base.powf(safe_log_r));
         
         if !dlogm_dlogr.is_finite() || !dlogp_dlogr.is_finite() ||
         dlogm_dlogr.abs() > 1e30 || dlogm_dlogr > 1e30 {
@@ -216,13 +220,21 @@ impl StellarModel {
     
         let _log_pressure_threshold: f64 = self.params.surface_pressure_threshold.log10();
 
+        let mut last_valid_state = state.clone();
+        let mut last_valid_log_r: f64 = log_r;
+
         while log_r < log_r_end {
             self.write_state_to_file(&mut file, log_r, &state)?;
     
             if self.is_terminationn_condition_met(log_r, &state, _log_pressure_threshold) {
+                state = last_valid_state;
+                log_r = last_valid_log_r;
                 break;
             }
-    
+            
+            last_valid_state = state.clone();
+            last_valid_log_r = log_r;
+            
             state = solver.step(log_r, &state);
             log_r += self.params.log_dr;
         }
