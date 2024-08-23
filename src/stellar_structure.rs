@@ -129,6 +129,21 @@ impl Derivatives<f64> for StellarStructure {
         let dlogm_dlogr: f64 = (4.0 * PI * base.powf(safe_log_r).powf(3.0) * base.powf(safe_log_rho)) / base.powf(safe_log_m);
         let dlogp_dlogr: f64 = - (self.constants.g * base.powf(safe_log_m) * base.powf(safe_log_rho)) / (base.powf(safe_log_p) * base.powf(safe_log_r));
         
+        // if (safe_log_r * 100.0).round() / 100.0 != (safe_log_r * 100.0).floor() / 100.0 {
+        //     println!("Debug:\t\tr(cm)\t m(g)\tP(dyne/cm^2)\trho(g/cm^3)\tdm/dr\tdP/dr");
+        //     println!("Debug\t\t{:.2e}\t{:.2e}\t{:.2e}\t{:.2e}\t{:.2e}\t{:.2e}",
+        //         base.powf(safe_log_r),
+        //         base.powf(safe_log_m),
+        //         base.powf(safe_log_p),
+        //         base.powf(safe_log_rho),
+        //         dlogm_dlogr * base.powf(safe_log_m) / base.powf(safe_log_r), // dm/dr
+        //         dlogp_dlogr * base.powf(safe_log_p) / base.powf(safe_log_r)  // dP/dr
+        // );
+        //     println!("Log Debug:\t\tlog(m)\tlog(p)\tlog(r)\tlog(rho)\tdlogm_dlogr\tdlogp_dlogr");
+        //     println!("Log Debug:\t\t{:.2e}\t{:.2e}\t{:.2e}\t{:.2e}\t{:.2e}\t{:.2e}", safe_log_m, safe_log_p, safe_log_r, safe_log_rho, dlogm_dlogr, dlogp_dlogr);
+        //     println!("----------------------------------------");
+        // }
+
         if !dlogm_dlogr.is_finite() || !dlogp_dlogr.is_finite() ||
         dlogm_dlogr.abs() > 1e30 || dlogm_dlogr > 1e30 {
             println!("Warning: Extreme Derivate Values Detected At log_r = {:2e}", log_r);
@@ -201,7 +216,8 @@ impl StellarModel {
         let base: f64 = 10.0;
         let log_r_start: f64 = self.r_start.log10();
         let log_r_end: f64 = self.r_end.log10();
-        let _dr: f64 = base.powf(self.params.log_dr);
+        let mut log_dr: f64 = self.params.log_dr;
+        let _dr: f64 = base.powf(log_dr);
 
         let log_rho_c: f64 = self.rho_c.log10();
 
@@ -211,7 +227,7 @@ impl StellarModel {
 
         let mut state: State<f64> = State { values: vec![log_m0, log_p0] };
 
-        let solver: RK4Solver<'_, f64, StellarStructure> = RK4Solver::new(&self.structure, self.params.log_dr);
+        let solver: RK4Solver<'_, f64, StellarStructure> = RK4Solver::new(&self.structure);
 
         let mut file = File::create(output_file)?;
         writeln!(file, "r,m,P")?;
@@ -226,7 +242,7 @@ impl StellarModel {
         while log_r < log_r_end {
             self.write_state_to_file(&mut file, log_r, &state)?;
     
-            if self.is_terminationn_condition_met(log_r, &state, _log_pressure_threshold) {
+            if self.is_termination_condition_met(log_r, &state, _log_pressure_threshold) {
                 state = last_valid_state;
                 log_r = last_valid_log_r;
                 break;
@@ -235,7 +251,19 @@ impl StellarModel {
             last_valid_state = state.clone();
             last_valid_log_r = log_r;
             
-            state = solver.step(log_r, &state);
+            let next_state: State<f64> = solver.step(log_r, &state, self.params.log_dr);
+
+            let log_rho: f64 = (state.values[1] - self.structure.constants.k.log10()) / self.structure.constants.gamma;
+            let next_log_rho: f64 = (next_state.values[1] - self.structure.constants.k.log10()) / self.structure.constants.gamma;
+            let log_rho_diff: f64 = (next_log_rho - log_rho).abs();
+
+            if log_rho_diff > 1e-2 {
+                log_dr /= 2.0;
+            } else if log_rho_diff < 1e-4 {
+                log_dr *= 2.0;
+            }
+            
+            state = next_state;
             log_r += self.params.log_dr;
         }
         Ok((base.powf(log_r), base.powf(state.values[0]), base.powf(state.values[1])))
@@ -270,14 +298,19 @@ impl StellarModel {
     /// 
     /// * `log_r` - The logarithm of the current radius.
     /// * `state` - THe current state, containing the logarithmic mass and pressure.
-    /// * `log_p0` - The initial logarithmic pressure value.
-    fn is_terminationn_condition_met(&self, log_r: f64, state: &State<f64>, _log_pressure_threshold: f64) -> bool {
+    /// * `_log_pressure_threshold` - Optional. The log of the surface pressure threshold.
+    /// 
+    /// # Returns
+    /// 
+    /// Returns `true` if a `NaN` value or the surface (according to `_log_surface_threshold`) is detected.
+    /// Returns `false` otherwise.
+    fn is_termination_condition_met(&self, log_r: f64, state: &State<f64>, _log_pressure_threshold: f64) -> bool {
         let base: f64 = 10.0;
-        if state.values[1].is_nan() {
+        if state.values[0].is_nan() || state.values[1].is_nan() {
             println!("Instability Detected at r = {:.2e}, m = {:.2e}, P = {:.2e}", base.powf(log_r), base.powf(state.values[0]), base.powf(state.values[1]));
             return true;
         }
-        if state.values[1] < _log_pressure_threshold {//|| log_r > 6.3 { // log10(1e6) = 6
+        if state.values[1] < _log_pressure_threshold {
             println!("Surface Detected At r = {:.2e}, m = {:.2e}, P = {:.2e}", base.powf(log_r), base.powf(state.values[0]), base.powf(state.values[1]));
             return true;
         }
