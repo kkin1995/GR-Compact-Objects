@@ -4,6 +4,7 @@
 //! suitable for solving a wide range of initial value problems.
 
 use std::clone::Clone;
+use std::marker::PhantomData;
 
 /// Represents the state of a system at a given time.
 ///
@@ -35,7 +36,7 @@ pub trait Derivatives<T> {
 /// RK4 solver for systems of ordinary differential equations.
 pub struct RK4Solver<'a, T, D: Derivatives<T>> {
     derivatives: &'a D,
-    dt: T,
+    _marker: PhantomData<T>,
 }
 
 impl<'a, T, D> RK4Solver<'a, T, D>
@@ -57,8 +58,8 @@ where
     /// # Returns
     ///
     /// A new `RK4Solver` instance.
-    pub fn new(derivatives: &'a D, dt: T) -> Self {
-        RK4Solver { derivatives, dt }
+    pub fn new(derivatives: &'a D) -> Self {
+        RK4Solver { derivatives, _marker: PhantomData }
     }
 
     /// Performs one step of the RK4 method.
@@ -86,38 +87,38 @@ where
     /// let state = State { values: vec![1.0, 0.0] };
     /// let next_state = solver.step(0.0, &state);
     /// ```
-    pub fn step(&self, t: T, state: &State<T>) -> State<T> {
+    pub fn step(&self, t: T, state: &State<T>, dt: T) -> State<T> {
         let k1 = self.derivatives.derivatives(t, state);
         let k2 = self.derivatives.derivatives(
-            t + self.dt * T::from(0.5),
+            t + dt * T::from(0.5),
             &State {
                 values: state
                     .values
                     .iter()
                     .zip(k1.values.iter())
-                    .map(|(&s, &k)| s + k * self.dt * T::from(0.5))
+                    .map(|(&s, &k)| s + k * dt * T::from(0.5))
                     .collect(),
             },
         );
         let k3 = self.derivatives.derivatives(
-            t + self.dt * T::from(0.5),
+            t + dt * T::from(0.5),
             &State {
                 values: state
                     .values
                     .iter()
                     .zip(k2.values.iter())
-                    .map(|(&s, &k)| s + k * self.dt * T::from(0.5))
+                    .map(|(&s, &k)| s + k * dt * T::from(0.5))
                     .collect(),
             },
         );
         let k4 = self.derivatives.derivatives(
-            t + self.dt,
+            t + dt,
             &State {
                 values: state
                     .values
                     .iter()
                     .zip(k3.values.iter())
-                    .map(|(&s, &k)| s + k * self.dt)
+                    .map(|(&s, &k)| s + k * dt)
                     .collect(),
             },
         );
@@ -131,7 +132,7 @@ where
                 .zip(k3.values.iter())
                 .zip(k4.values.iter())
                 .map(|((((s, &k1), &k2), &k3), &k4)| {
-                    *s + (self.dt / T::from(6.0))
+                    *s + (dt / T::from(6.0))
                         * (k1 + k2 * T::from(2.0) + k3 * T::from(2.0) + k4)
                 })
                 .collect(),
