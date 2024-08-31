@@ -256,10 +256,8 @@ impl StellarModel {
 
         while log_r < log_r_end {
             self.write_state_to_file(&mut file, log_r, &state)?;
-    
-            let log_rho_for_termination: f64 = (state.values[1] - self.structure.constants.k.log10()) / self.structure.constants.gamma;
 
-            if self.is_termination_condition_met("rho", log_r, &state, _log_pressure_threshold, log_rho_for_termination, 1.1) {
+            if self.is_termination_condition_met( log_r, &state, 1.1) {
                 state = last_valid_state;
                 log_r = last_valid_log_r;
                 break;
@@ -321,23 +319,19 @@ impl StellarModel {
     /// 
     /// Returns `true` if a `NaN` value or the surface (according to `_log_surface_threshold`) is detected.
     /// Returns `false` otherwise.
-    fn is_termination_condition_met(&self, rho_or_pressure: &str, log_r: f64, state: &State<f64>, _log_pressure_threshold: f64, _log_rho: f64, _log_rho_threshold: f64) -> bool {
+    fn is_termination_condition_met(&self, log_r: f64, state: &State<f64>, log_rho_threshold: f64) -> bool {
         let base: f64 = 10.0;
         if state.values[0].is_nan() || state.values[1].is_nan() {
             println!("Instability Detected at r = {:.2e}, m = {:.2e}, P = {:.2e}", base.powf(log_r), base.powf(state.values[0]), base.powf(state.values[1]));
             return true;
         }
-        if rho_or_pressure == "pressure"{
-            if state.values[1] < _log_pressure_threshold {
-                println!("Surface Detected At r = {:.2e}, m = {:.2e}, P = {:.2e}", base.powf(log_r), base.powf(state.values[0]), base.powf(state.values[1]));
-                return true;
-            }
-        } else if rho_or_pressure == "rho" {
-            if _log_rho < _log_rho_threshold {
-                print!("Surface Detected At r = {:.2e}, m = {:.2e}, P = {:.2e}", base.powf(log_r), base.powf(state.values[0]), base.powf(state.values[1]));
-                return true;
-            }
+
+        let log_rho = (state.values[1] - self.structure.constants.k.log10()) / self.structure.constants.gamma;
+        if log_rho <= log_rho_threshold {
+            println!("Surface detected at r = {:.2e}, log_rho = {:.2e}", 10f64.powf(log_r), log_rho);
+            return true;
         }
+
         false
     } 
 
