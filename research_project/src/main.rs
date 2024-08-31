@@ -5,7 +5,7 @@ use std::io::Write;
 struct CompactStarParams {
     gamma: f64,
     k: f64,
-    central_density: f64
+    central_density: f64,
 }
 
 impl CompactStarParams {
@@ -28,7 +28,7 @@ fn create_neutron_star_model(params: CompactStarParams) -> StellarModel {
 
     StellarModel::new(
         constants,
-        0.01,
+        1.0,
         1e12,
         params.central_density,
         Some(integration_params)
@@ -42,32 +42,33 @@ fn run_compact_star_simulation(params: CompactStarParams, output_file: &str) -> 
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let n: i32 = 11; // Replace this with the desired number of values
-    let gas_type: &str = "non_relativistic_electron_gas";
+    let gas_type: &str = "relativistic_neutron_gas";
+    let mu_e: f64 = 2.0;
 
     let (mut start, mut end, mut k, mut gamma): (f64, f64, f64, f64) = (0.0, 0.0, 0.0, 0.0);
 
     if gas_type == "non_relativistic_electron_gas" {
         // Non - Relativistic Electrons
-        start = 3.0;
-        end = 12.0; //5.0;
-        k = 1.0036e13;
+        start = 1.0;
+        end = 5.0;
         gamma = 5.0 / 3.0;
+        k = 1.0036e13 / mu_e.powf(gamma);
     } else if gas_type == "relativistic_electron_gas" {
         // Relativisitic Electrons
         start = 7.0;
-        end = 9.0;
-        k = 1.2435e15;
+        end = 12.0;
         gamma = 4.0 / 3.0;
+        k = 1.2435e15 / mu_e.powf(gamma);
     } else if gas_type == "non_relativistic_neutron_gas" {
         // Non - Relativistic Neutrons
-        start = 12.0;
+        start = 9.0;
         end = 14.0;
         k = 5.3802e9;
         gamma = 5.0 / 3.0;
     } else if gas_type == "relativistic_neutron_gas" {
         // Relativistic Neutrons
         start = 16.0;
-        end = 18.0;
+        end = 20.0;
         k = 1.2293e15;
         gamma = 4.0 / 3.0;
     }
