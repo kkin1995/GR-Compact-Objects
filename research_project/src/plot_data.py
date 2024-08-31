@@ -108,8 +108,10 @@ def plot_combined_mass_radius_relation(non_relativistic_data, relativistic_data,
         return
     
     plt.figure(figsize=(10,6))
-    plt.scatter(non_relativistic_data['Radius'] * 1e-5, non_relativistic_data['Mass'] / M_sun, s=15, c='red', label='Non-Relativistic')
-    plt.scatter(relativistic_data['Radius'] * 1e-5, relativistic_data['Mass'] / M_sun, s=15, c='blue', label='Ultra-Relativistic')
+    if non_relativistic_data is not None:
+        plt.scatter(non_relativistic_data['Radius'] * 1e-5, non_relativistic_data['Mass'] / M_sun, s=15, c='red', label='Non-Relativistic')
+    if relativistic_data is not None:
+        plt.scatter(relativistic_data['Radius'] * 1e-5, relativistic_data['Mass'] / M_sun, s=15, c='blue', label='Ultra-Relativistic')
     plt.xlabel('Radius (R) [km]')
     plt.ylabel('Mass (M / M_sun)')
     plt.title(f"Mass-Radius Relation for {gas_type.replace("_", " ").title()}")
@@ -120,25 +122,25 @@ def plot_combined_mass_radius_relation(non_relativistic_data, relativistic_data,
 
 def process_combined_plots(grouped_files: dict):
     for gas_type, keys in grouped_files.items():
-        if 'non_relativistic' in keys and 'relativistic' in keys:
+        non_rel_data = None
+        rel_data = None
+        if 'non_relativistic' in keys:
             non_rel_file = keys['non_relativistic']["filename"]
-            rel_file = keys['relativistic']["filename"]
-            non_rel_start_density = keys["non_relativistic"]["start_density"]
-            rel_start_density = keys["relativistic"]["start_density"]
-
             non_rel_data = load_data(non_rel_file)
+        if 'relativistic' in keys:
+            rel_file = keys['relativistic']["filename"]
             rel_data = load_data(rel_file)
-
-            plot_combined_mass_radius_relation(non_rel_data, rel_data, gas_type, non_rel_start_density, rel_start_density)
-            print(f"Created combined plot for {gas_type}")
-            print(f"  Non-relativistic data: {os.path.basename(non_rel_file)}")
-            print(f"  Relativistic data: {os.path.basename(rel_file)}")
+            print(f"Loaded relativistic data for {gas_type}")
+        
+        if non_rel_data is not None or rel_data is not None:
+            plot_combined_mass_radius_relation(
+                non_rel_data, 
+                rel_data, gas_type, 
+                keys["non_relativistic"]["start_density"], 
+                keys["relativistic"]["start_density"]
+                )
         else:
-            if 'non_relativistic' in keys:
-                print(f"  Found non-relativistic file: {os.path.basename(keys['non_relativistic'])}")
-            if 'relativistic' in keys:
-                print(f"  Found relativistic file: {os.path.basename(keys['relativistic'])}")
-                print("  Missing:", "relativistic" if 'non_relativistic' in keys else "non_relativistic")
+            print(f"No data available for {gas_type}")
 
 def main():
     parser = argparse.ArgumentParser(description="Plot Stellar Structure Data")
