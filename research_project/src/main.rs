@@ -23,7 +23,7 @@ fn create_neutron_star_model(params: CompactStarParams) -> StellarModel {
 
     let integration_params = IntegrationParams {
         log_dr: 0.0001,
-        surface_pressure_threshold: 1.1
+        surface_density_threshold: 1.1
     };
 
     StellarModel::new(

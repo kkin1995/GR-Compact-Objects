@@ -56,22 +56,22 @@ pub struct PhysicalConstants {
 /// Parameters that control the integration process.
 /// 
 /// This struct defines parameters such as the logarithmic step size (`log_dr`)
-/// and the surface pressure threshold (`surface_pressure_threshold`).
+/// and the surface density threshold (`surface_density_threshold`).
 #[derive(Debug, Clone)]
 pub struct IntegrationParams {
     pub log_dr: f64,
-    pub surface_pressure_threshold: f64
+    pub surface_density_threshold: f64
 }
 
 impl Default for IntegrationParams {
     /// Provides default integration parameters.
     /// 
-    /// Returns a default step size of `0.01` for `log_dr` and a surface pressure
+    /// Returns a default step size of `0.01` for `log_dr` and a surface density
     /// threshold of `1.1`.
     fn default() -> Self {
         Self {
             log_dr: 0.01,
-            surface_pressure_threshold: 1.1
+            surface_density_threshold: 1.1
         }
     }
 }
@@ -248,8 +248,6 @@ impl StellarModel {
         writeln!(file, "r,m,P")?;
     
         let mut log_r: f64 = log_r_start;
-    
-        let _log_pressure_threshold: f64 = self.params.surface_pressure_threshold.log10();
 
         let mut last_valid_state = state.clone();
         let mut last_valid_log_r: f64 = log_r;
@@ -257,7 +255,7 @@ impl StellarModel {
         while log_r < log_r_end {
             self.write_state_to_file(&mut file, log_r, &state)?;
 
-            if self.is_termination_condition_met( log_r, &state, 1.1) {
+            if self.is_termination_condition_met( log_r, &state) {
                 state = last_valid_state;
                 log_r = last_valid_log_r;
                 break;
@@ -319,7 +317,7 @@ impl StellarModel {
     /// 
     /// Returns `true` if a `NaN` value or the surface (according to `_log_surface_threshold`) is detected.
     /// Returns `false` otherwise.
-    fn is_termination_condition_met(&self, log_r: f64, state: &State<f64>, log_rho_threshold: f64) -> bool {
+    fn is_termination_condition_met(&self, log_r: f64, state: &State<f64>) -> bool {
         let base: f64 = 10.0;
         if state.values[0].is_nan() || state.values[1].is_nan() {
             println!("Instability Detected at r = {:.2e}, m = {:.2e}, P = {:.2e}", base.powf(log_r), base.powf(state.values[0]), base.powf(state.values[1]));
@@ -327,7 +325,7 @@ impl StellarModel {
         }
 
         let log_rho = (state.values[1] - self.structure.constants.k.log10()) / self.structure.constants.gamma;
-        if log_rho <= log_rho_threshold {
+        if log_rho <= self.params.surface_density_threshold {
             println!("Surface detected at r = {:.2e}, log_rho = {:.2e}", 10f64.powf(log_r), log_rho);
             return true;
         }
