@@ -1,3 +1,7 @@
 target/
 .DS_Store
 *.txt
+*.csv
+*.png
+*.dat
+temp_analyse.py
