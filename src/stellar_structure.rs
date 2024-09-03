@@ -315,12 +315,14 @@ impl StellarModel {
             let c: f64 = (a + b) / 2.0;
             let p_c: f64 = self.integrate_pressure(r_1, c, p_1, m_1)?;
 
-            if (p_c - self.surface_pressure).abs() < tolerance {
+            let rho_c: f64 = (p_c / self.structure.constants.k).powf(1.0 / self.structure.constants.gamma);
+            if (rho_c - self.surface_density).abs() < tolerance {
                 return Ok(c);
             }
 
             let p_a: f64 = self.integrate_pressure(r_1, a, p_1, m_1)?;
-            if (p_c - self.surface_pressure) * (p_a - self.surface_pressure) > 0.0 {
+            let rho_a: f64 = (p_a / self.structure.constants.k).powf(1.0 / self.structure.constants.gamma);
+            if (rho_c - self.surface_density) * (rho_a - self.surface_density) > 0.0 {
                 a = c;
             } else {
                 b = c;
@@ -332,19 +334,19 @@ impl StellarModel {
 
     fn integrate_pressure(&self, r_start: f64, r_end: f64, p_start: f64, m: f64) -> Result<f64, StellarError> {
         let n_steps: i32 = 1000;
-        let log_dr: f64 = (r_end.log10() - r_start.log10()) / n_steps as f64;
+        let dr: f64 = (r_end - r_start) / n_steps as f64;
 
-        let mut state: State<f64> = State { values: vec![m.log10(), p_start.log10()] };
-        let mut log_r: f64 = r_start.log10();
-
-        let solver: RK4Solver<'_, f64, StellarStructure> = RK4Solver::new(&self.structure);
+        let mut p: f64 = p_start;
+        let mut r: f64 = r_start;
 
         for _ in 0..n_steps {
-            state = solver.step(log_r, &state, log_dr);
-            log_r += log_dr;
+            let rho: f64 = (p / self.structure.constants.k).powf(1.0 / self.structure.constants.gamma);
+            let dp_dr: f64 = -self.structure.constants.g * m * rho / (r * r);
+            p += dp_dr * dr;
+            r += dr;
         }
 
-        Ok(10f64.powf(state.values[1]))
+        Ok(p)
 
     }
 
