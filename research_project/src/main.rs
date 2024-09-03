@@ -26,12 +26,17 @@ fn create_neutron_star_model(params: CompactStarParams) -> StellarModel {
         surface_density_threshold: 1.1
     };
 
+    let surface_density: f64 = 1.0; // g / cm^3
+    let surface_pressure: f64 = params.k * surface_density.powf(params.gamma);
+
     StellarModel::new(
         constants,
         1.0,
         1e12,
         params.central_density,
-        Some(integration_params)
+        Some(integration_params),
+        surface_pressure,
+        surface_density
     )
 }
 
@@ -41,7 +46,7 @@ fn run_compact_star_simulation(params: CompactStarParams, output_file: &str) -> 
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let n: i32 = 11; // Replace this with the desired number of values
+    let n: i32 = 6; // Replace this with the desired number of values
     let gas_type: &str = "relativistic_neutron_gas";
     let mu_e: f64 = 2.0;
 

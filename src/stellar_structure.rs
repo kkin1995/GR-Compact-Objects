@@ -180,7 +180,9 @@ pub struct StellarModel {
     pub r_start: f64,
     pub r_end: f64,
     pub rho_c: f64,
-    params: IntegrationParams
+    params: IntegrationParams,
+    surface_pressure: f64,
+    surface_density: f64
 }
 
 impl StellarModel {
@@ -201,13 +203,15 @@ impl StellarModel {
     /// let params = IntegrationParams::default();
     /// let model = StellarModel::new(constants, 1.0e-6, 1.0e6, 1.0e14, Some(params))l
     /// ```
-    pub fn new(constants: PhysicalConstants, r_start: f64, r_end: f64, rho_c: f64, params: Option<IntegrationParams>) -> Self {
+    pub fn new(constants: PhysicalConstants, r_start: f64, r_end: f64, rho_c: f64, params: Option<IntegrationParams>, surface_pressure: f64, surface_density: f64) -> Self {
         StellarModel {
             structure: StellarStructure::new(constants),
             r_start,
             r_end,
             rho_c,
-            params: params.unwrap_or_default()
+            params: params.unwrap_or_default(),
+            surface_pressure,
+            surface_density
         }
     }
 
@@ -230,8 +234,8 @@ impl StellarModel {
     pub fn run(&self, output_file: &str) -> Result<(f64, f64, f64), StellarError> {
         let base: f64 = 10.0;
         let log_r_start: f64 = self.r_start.log10();
-        let log_r_end: f64 = self.r_end.log10();
-        let mut log_dr: f64 = self.params.log_dr;
+        let _log_r_end: f64 = self.r_end.log10();
+        let log_dr: f64 = self.params.log_dr;
         let _dr: f64 = base.powf(log_dr);
 
         let log_rho_c: f64 = self.rho_c.log10();
@@ -252,7 +256,8 @@ impl StellarModel {
         let mut last_valid_state = state.clone();
         let mut last_valid_log_r: f64 = log_r;
 
-        while log_r < log_r_end {
+        // while log_r < log_r_end {
+        while !self.is_dm_dr_negligible(log_r, &state) {
             self.write_state_to_file(&mut file, log_r, &state)?;
 
             if self.is_termination_condition_met( log_r, &state) {
@@ -264,22 +269,83 @@ impl StellarModel {
             last_valid_state = state.clone();
             last_valid_log_r = log_r;
             
-            let next_state: State<f64> = solver.step(log_r, &state, self.params.log_dr);
+            let next_state: State<f64> = solver.step(log_r, &state, log_dr);
 
-            let log_rho: f64 = (state.values[1] - self.structure.constants.k.log10()) / self.structure.constants.gamma;
-            let next_log_rho: f64 = (next_state.values[1] - self.structure.constants.k.log10()) / self.structure.constants.gamma;
-            let log_rho_diff: f64 = (next_log_rho - log_rho).abs();
+            // let log_rho: f64 = (state.values[1] - self.structure.constants.k.log10()) / self.structure.constants.gamma;
+            // let next_log_rho: f64 = (next_state.values[1] - self.structure.constants.k.log10()) / self.structure.constants.gamma;
+            // let log_rho_diff: f64 = (next_log_rho - log_rho).abs();
 
-            if log_rho_diff > 1e-2 {
-                log_dr /= 2.0;
-            } else if log_rho_diff < 1e-4 {
-                log_dr *= 2.0;
-            }
+            // if log_rho_diff > 1e-2 {
+            //     log_dr /= 2.0;
+            // } else if log_rho_diff < 1e-4 {
+            //     log_dr *= 2.0;
+            // }
             
             state = next_state;
-            log_r += self.params.log_dr;
+            log_r += log_dr;
         }
-        Ok((base.powf(log_r), base.powf(state.values[0]), base.powf(state.values[1])))
+
+        if self.is_dm_dr_negligible(log_r, &state) {
+            println!("dm/dr is negligible");
+        }
+
+        let r_1 = base.powf(log_r);
+        let m_1 = base.powf(state.values[0]);
+        let p_1 = base.powf(state.values[1]);
+
+        let r_2: f64 = self.find_surface_radius(r_1, p_1, m_1)?;
+
+        Ok((r_2, m_1, self.surface_pressure))
+    }
+
+    fn is_dm_dr_negligible(&self, log_r: f64, state: &State<f64>) -> bool{
+        let derivatives: State<f64> = self.structure.derivatives(log_r, state);
+        let log_rho: f64 = (state.values[1] - self.structure.constants.k.log10()) / self.structure.constants.gamma;
+        let rho: f64 = 10f64.powf(log_rho);
+
+        derivatives.values[0].abs() < 1e-6 || rho <= self.surface_density
+    }
+
+    fn find_surface_radius(&self, r_1: f64, p_1: f64, m_1: f64) -> Result<f64, StellarError> {
+        let mut a: f64 = r_1;
+        let mut b: f64 = r_1 * 1.2;
+        let tolerance: f64 = 1e-6 * r_1;
+
+        while b - a > tolerance {
+            let c: f64 = (a + b) / 2.0;
+            let p_c: f64 = self.integrate_pressure(r_1, c, p_1, m_1)?;
+
+            if (p_c - self.surface_pressure).abs() < tolerance {
+                return Ok(c);
+            }
+
+            let p_a: f64 = self.integrate_pressure(r_1, a, p_1, m_1)?;
+            if (p_c - self.surface_pressure) * (p_a - self.surface_pressure) > 0.0 {
+                a = c;
+            } else {
+                b = c;
+            }
+        }
+
+        Ok((a+b) / 2.0)
+    }
+
+    fn integrate_pressure(&self, r_start: f64, r_end: f64, p_start: f64, m: f64) -> Result<f64, StellarError> {
+        let n_steps: i32 = 1000;
+        let log_dr: f64 = (r_end.log10() - r_start.log10()) / n_steps as f64;
+
+        let mut state: State<f64> = State { values: vec![m.log10(), p_start.log10()] };
+        let mut log_r: f64 = r_start.log10();
+
+        let solver: RK4Solver<'_, f64, StellarStructure> = RK4Solver::new(&self.structure);
+
+        for _ in 0..n_steps {
+            state = solver.step(log_r, &state, log_dr);
+            log_r += log_dr;
+        }
+
+        Ok(10f64.powf(state.values[1]))
+
     }
 
     /// Writes the current state (radius, mass, pressure) to the output file.
@@ -321,12 +387,6 @@ impl StellarModel {
         let base: f64 = 10.0;
         if state.values[0].is_nan() || state.values[1].is_nan() {
             println!("Instability Detected at r = {:.2e}, m = {:.2e}, P = {:.2e}", base.powf(log_r), base.powf(state.values[0]), base.powf(state.values[1]));
-            return true;
-        }
-
-        let log_rho = (state.values[1] - self.structure.constants.k.log10()) / self.structure.constants.gamma;
-        if log_rho <= self.params.surface_density_threshold {
-            println!("Surface detected at r = {:.2e}, log_rho = {:.2e}", 10f64.powf(log_r), log_rho);
             return true;
         }
 
