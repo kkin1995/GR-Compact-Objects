@@ -55,23 +55,19 @@ pub struct PhysicalConstants {
 
 /// Parameters that control the integration process.
 /// 
-/// This struct defines parameters such as the logarithmic step size (`log_dr`)
-/// and the surface density threshold (`surface_density_threshold`).
+/// This struct defines parameters such as the logarithmic step size (`log_dr`).
 #[derive(Debug, Clone)]
 pub struct IntegrationParams {
-    pub log_dr: f64,
-    pub surface_density_threshold: f64
+    pub log_dr: f64
 }
 
 impl Default for IntegrationParams {
     /// Provides default integration parameters.
     /// 
-    /// Returns a default step size of `0.01` for `log_dr` and a surface density
-    /// threshold of `1.1`.
+    /// Returns a default step size of `0.01` for `log_dr`.
     fn default() -> Self {
         Self {
-            log_dr: 0.01,
-            surface_density_threshold: 1.1
+            log_dr: 0.01
         }
     }
 }
@@ -195,6 +191,8 @@ impl StellarModel {
     /// * - `r_end` - The ending radius for the integration.
     /// * - `rho_c` - The central density of the compact body.
     /// * - `params` - Optional integration parameters. Defaults to `IntegrationParameters::default()` if `None`.
+    /// * - `surface_pressure` - The pressure at the surface of the star. Typically calculated from the polytropic EoS.
+    /// * - `surface_density` - The density at the surface of the star. Used as a threshold to stop integration.
     /// 
     /// # Example
     /// 
@@ -298,6 +296,22 @@ impl StellarModel {
         Ok((r_2, m_1, self.surface_pressure))
     }
 
+    /// Checks if the mass continuity equation (dm/dr) is negligible.
+    /// 
+    /// This function determines whether the change in mass with respect to radius
+    /// has become negligible, indicating that we're approaching the star's surface.
+    /// It also checks if the density has fallen below the defined surface density.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `log_r` - The logarithm (base 10) of the radial coordinate.
+    /// * `state` - A `State<f64>` containing the logarithms of the mass and pressure.
+    /// 
+    /// # Returns
+    /// 
+    /// Returns `true` if either:
+    /// - The absolute value of dm/dr is less than 1e-6, or
+    /// - The current density is lower than or equal to the defined surface density.
     fn is_dm_dr_negligible(&self, log_r: f64, state: &State<f64>) -> bool{
         let derivatives: State<f64> = self.structure.derivatives(log_r, state);
         let log_rho: f64 = (state.values[1] - self.structure.constants.k.log10()) / self.structure.constants.gamma;
@@ -306,6 +320,32 @@ impl StellarModel {
         derivatives.values[0].abs() < 1e-6 || rho <= self.surface_density
     }
 
+    /// Calculates the total radius of the star using the bisection method.
+    /// 
+    /// This function is called after dm/dr becomes negligible, to precisely locate
+    /// the star's surface where the density equals the defined surface density.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `r_1` - Radius where dm/dr became negligible.
+    /// * `p_1` - Pressure at `r_1`.
+    /// * `m_1` - Mass at `r_1`, considered the total mass of the star.
+    /// 
+    /// # Returns
+    /// 
+    /// Returns the calculated surface radius of the star.
+    /// Returns `StellarError` if an error occurs during pressure integration.
+    /// 
+    /// # Algorithm
+    /// 
+    /// Uses the bisection method to find the radius where the density equals
+    /// the defined surface density. The search starts from `r_1` and extends
+    /// outward by 20% of `r_1`.
+    /// 
+    /// # Notes
+    /// 
+    /// The tolerance for both the bisection method and the surface density
+    /// comparison is set to 1e-6 * r_1.
     fn find_surface_radius(&self, r_1: f64, p_1: f64, m_1: f64) -> Result<f64, StellarError> {
         let mut a: f64 = r_1;
         let mut b: f64 = r_1 * 1.2;
@@ -332,6 +372,32 @@ impl StellarModel {
         Ok((a+b) / 2.0)
     }
 
+    /// Integrates the pressure equation from a starting radius to an ending radius.
+    /// 
+    /// This function is used when dm/dr has become negligible, allowing us to
+    /// integrate only the pressure equation while assuming constant mass.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `r_start` - Starting radius for the integration.
+    /// * `r_end` - Ending radius for the integration.
+    /// * `p_start` - Pressure at `r_start`.
+    /// * `m` - Total mass of the star (constant in this region).
+    /// 
+    /// # Returns
+    /// 
+    /// Returns the calculated pressure at `r_end`.
+    /// Returns `StellarError` if an error occurs during integration.
+    /// 
+    /// # Method
+    /// 
+    /// Uses a simple Euler method with 1000 steps to integrate dP/dr from
+    /// `r_start` to `r_end`. The step size is calculated as (r_end - r_start) / 1000.
+    /// 
+    /// # Notes
+    /// 
+    /// This method assumes that the mass is constant in the region of integration,
+    /// which is valid when dm/dr is negligible near the star's surface.
     fn integrate_pressure(&self, r_start: f64, r_end: f64, p_start: f64, m: f64) -> Result<f64, StellarError> {
         let n_steps: i32 = 1000;
         let dr: f64 = (r_end - r_start) / n_steps as f64;
