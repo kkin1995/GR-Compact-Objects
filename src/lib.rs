@@ -1,13 +1,16 @@
-//! A crate for numerical simulations of ordinary differential equations.
+//! A crate for simulating compact objects like black holes, neutron stars, and white dwarfs
+//! using general relativity.
 //!
-//! This crate provides implementations of numerical methods for solving
-//! ordinary differential equations (ODEs), with a focus on the
-//! Runge-Kutta 4th order (RK4) method.
+//! This crate provides different modules for simulating anything from the internal structure of 
+//! compact objects to particle orbits around said compact objects. This project is currently in active
+//! development and may change significantly from time to time.
+//! 
 //!
 //! # Features
 //!
 //! - Generic implementation of the RK4 method
 //! - Flexible `State` and `Derivatives` abstractions for various ODE systems
+//! - Implementation of stellar structure simulations using Newtonian mechanics.
 //!
 //! # Example
 //!
@@ -39,6 +42,7 @@
 //!
 //! # Modules
 //!
-//! - [`rk4`](rk4): Contains the implementation of the RK4 solver.
+//! - [`rk4`]: Contains the implementation of the RK4 solver.
+//! - [`stellar_structure`]: Contains the module to simulate the internal structure of compact objects for a given metric.
 pub mod rk4;
 pub mod stellar_structure;
