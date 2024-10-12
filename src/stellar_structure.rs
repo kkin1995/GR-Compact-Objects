@@ -27,13 +27,12 @@ pub enum StellarError {
     Math(String)
 }
 
-/// Physical constants required for the stellar structure equations.
+/// Equation of state required for the stellar structure equations.
 /// 
 /// # Fields
 /// 
-/// * `k`: The proportionality constannt in the polytropic equation of state.
+/// * `k`: The proportionality constant in the polytropic equation of state.
 /// * `gamma`: The polytropic index, related to the compressibility of the stellar material.
-/// * `g`: The gravitational constant.
 /// 
 /// # Physical Assumptions
 /// 
@@ -45,29 +44,59 @@ pub enum StellarError {
 /// 
 /// - `gamma` is often chosen as 5/3 for a non-relativistic degenerate gas, or 4/3 for an
 /// ultra-relativistic gas.
-/// - `g` is the standard gravitational constant: 6.6743e-8 dyn cm^2 g^-2.
 #[derive(Debug, Clone)]
-pub struct PhysicalConstants {
+pub struct EquationOfState {
     pub k: f64,
     pub gamma: f64,
+}
+
+impl EquationOfState {
+    /// Calculates the polytropic equation of state.
+    pub fn polytrope(&self, rho: f64) -> f64 {
+        self.k * rho.powf(self.gamma)
+    }
+}
+
+/// Physical constants required for the stellar structure equations.
+/// 
+/// # Fields
+/// 
+/// * `g`: The gravitational constant.
+/// * `c`: The speed of light.
+/// 
+/// # Constants
+/// 
+/// - `g` is the standard gravitational constant: 6.6743e-8 dyn cm^2 g^-2.
+/// - `c` is the speed of light: 2.99792458e10 cm/s.
+pub struct PhysicalConstants {
     pub g: f64,
+    pub c: f64
+}
+
+/// Enum to specify the type of model to be used (Newtonian or TOV).
+#[derive(Debug, Clone, Copy)]
+pub enum ModelType {
+    Newton,
+    TOV,
 }
 
 /// Parameters that control the integration process.
 /// 
-/// This struct defines parameters such as the logarithmic step size (`log_dr`).
+/// This struct defines parameters such as the logarithmic step size (`log_dr`) and the model type (`model_type`).
 #[derive(Debug, Clone)]
 pub struct IntegrationParams {
-    pub log_dr: f64
+    pub log_dr: f64,
+    pub model_type: ModelType
 }
 
 impl Default for IntegrationParams {
     /// Provides default integration parameters.
     /// 
-    /// Returns a default step size of `0.01` for `log_dr`.
+    /// Returns a default step size of `0.01` for `log_dr` and `ModelType::Newton` for `model_type`.
     fn default() -> Self {
         Self {
-            log_dr: 0.01
+            log_dr: 0.01,
+            model_type: ModelType::Newton
         }
     }
 }
@@ -77,7 +106,9 @@ impl Default for IntegrationParams {
 /// This struct contains the physical constants and implements the `Derivatives<f64>` trait
 /// to calculate the derivatives of logarithmic mass and pressure with respect to the logarithmic radius.
 pub struct StellarStructure {
-    constants: PhysicalConstants
+    eos: EquationOfState,
+    constants: PhysicalConstants,
+    model_type: ModelType
 }
 
 impl StellarStructure {
@@ -85,16 +116,19 @@ impl StellarStructure {
     /// 
     /// # Arguments
     /// 
+    /// * `eos` - Equation of state required for the stellar structure equations.
     /// * `constants` - Physical constants required for the stellar structure equations.
+    /// * `model_type` - The model type (Newtonian or TOV).
     /// 
     /// # Example
     /// 
     /// ```
-    /// let constants = PhysicalConstants{ k: 1.0e13, gamma: 5.0 / 3.0, g: 6.67430e-8 };
-    /// let structure = StellarStructure::new(constants);
+    /// let eos = EquationOfState { k: 1.0e13, gamma: 5.0 / 3.0 };
+    /// let constants = PhysicalConstants { g: 6.67430e-8, c: 2.99792458e10 };
+    /// let structure = StellarStructure::new(eos, constants, ModelType::Newton);
     /// ```
-    pub fn new(constants: PhysicalConstants) -> Self {
-        Self { constants }
+    pub fn new(eos: EquationOfState, constants: PhysicalConstants, model_type: ModelType) -> Self {
+        Self { eos, constants, model_type }
     }
 }
 
@@ -118,7 +152,7 @@ impl Derivatives<f64> for StellarStructure {
         let log_p: f64 = state.values[1];
 
         let base: f64 = 10.0;
-        let log_rho: f64 = (log_p - self.constants.k.log10()) / self.constants.gamma;
+        let log_rho: f64 = (log_p - self.eos.k.log10()) / self.eos.gamma;
         
         if log_r.is_nan() || log_m.is_nan() || log_p.is_nan() || log_rho.is_nan() ||
         log_r.is_infinite() || log_m.is_infinite() || log_p.is_infinite() || log_rho.is_infinite() {
@@ -138,7 +172,22 @@ impl Derivatives<f64> for StellarStructure {
         // let dlogp_dlogr: f64 = - self.constants.g * (safe_log_m * base.ln()).exp() * (safe_log_rho * base.ln()).exp() / ((safe_log_p * base.ln()).exp() * (safe_log_r * base.ln()).exp());
 
         let dlogm_dlogr: f64 = (4.0 * PI * base.powf(safe_log_r).powf(3.0) * base.powf(safe_log_rho)) / base.powf(safe_log_m);
-        let dlogp_dlogr: f64 = - (self.constants.g * base.powf(safe_log_m) * base.powf(safe_log_rho)) / (base.powf(safe_log_p) * base.powf(safe_log_r));
+        let dlogp_dlogr: f64 = match self.model_type {
+            ModelType::Newton => {
+                - (self.constants.g * base.powf(safe_log_m) * base.powf(safe_log_rho)) / (base.powf(safe_log_p) * base.powf(safe_log_r))
+            },
+
+            ModelType::TOV => {
+                let first_factor = - self.constants.g * base.powf(safe_log_m) / base.powf(safe_log_r);
+                let second_factor = (base.powf(safe_log_rho) / base.powf(safe_log_p)) + (1.0 / self.constants.c);
+                let third_factor = 1.0 + ( (4.0 * PI * base.powf(safe_log_p) * (base.powf(safe_log_r).powf(3.0) )) / ( base.powf(safe_log_m) * self.constants.c.powf(2.0) ) );
+                let fourth_factor = 1.0 / ( 1.0 - ( (2.0 * self.constants.g * base.powf(safe_log_m)) / (base.powf(safe_log_r) * self.constants.c.powf(2.0)) ) );
+
+                first_factor * second_factor * third_factor * fourth_factor
+            }
+        };
+        
+        // let dlogp_dlogr: f64 = - (self.constants.g * base.powf(safe_log_m) * base.powf(safe_log_rho)) / (base.powf(safe_log_p) * base.powf(safe_log_r));
         
         // if (safe_log_r * 100.0).round() / 100.0 != (safe_log_r * 100.0).floor() / 100.0 {
         //     println!("Debug:\t\tr(cm)\t m(g)\tP(dyne/cm^2)\trho(g/cm^3)\tdm/dr\tdP/dr");
@@ -186,7 +235,8 @@ impl StellarModel {
     /// 
     /// # Arguments
     /// 
-    /// * - `constants` -  The physical constants used in the model.
+    /// * - `eos` - The equation of state used in the model.
+    /// * - `constants` - The physical constants used in the model.
     /// * - `r_start` - The starting radius for the integration.
     /// * - `r_end` - The ending radius for the integration.
     /// * - `rho_c` - The central density of the compact body.
@@ -197,13 +247,14 @@ impl StellarModel {
     /// # Example
     /// 
     /// ```
-    /// let constants = PhysicalConstants { k: 1.0e13, gamma: 5.0 / 3.0, g: 6.67430e-8 };
+    /// let eos = EquationOfState { k: 1.0e13, gamma: 5.0 / 3.0 };
+    /// let constants = PhysicalConstants { g: 6.67430e-8, c: 2.99792458e10 };
     /// let params = IntegrationParams::default();
-    /// let model = StellarModel::new(constants, 1.0e-6, 1.0e6, 1.0e14, Some(params))l
+    /// let model = StellarModel::new(eos, constants, 1.0e-6, 1.0e6, 1.0e14, Some(params), 1e-6, 1e-10);
     /// ```
-    pub fn new(constants: PhysicalConstants, r_start: f64, r_end: f64, rho_c: f64, params: Option<IntegrationParams>, surface_pressure: f64, surface_density: f64) -> Self {
+    pub fn new(eos: EquationOfState, constants: PhysicalConstants, r_start: f64, r_end: f64, rho_c: f64, params: Option<IntegrationParams>, surface_pressure: f64, surface_density: f64) -> Self {
         StellarModel {
-            structure: StellarStructure::new(constants),
+            structure: StellarStructure::new(eos, constants, params.as_ref().unwrap_or(&IntegrationParams::default()).model_type.clone()),
             r_start,
             r_end,
             rho_c,
@@ -240,7 +291,7 @@ impl StellarModel {
 
         let fraction: f64 = 4.0 / 3.0;
         let log_m0: f64 = fraction.log10() + std::f64::consts::PI.log10() + 3.0 * self.r_start.log10() + self.rho_c.log10();
-        let log_p0: f64 = self.structure.constants.k.log10() + (self.structure.constants.gamma * log_rho_c);
+        let log_p0: f64 = self.structure.eos.k.log10() + (self.structure.eos.gamma * log_rho_c);
 
         let mut state: State<f64> = State { values: vec![log_m0, log_p0] };
 
@@ -314,7 +365,7 @@ impl StellarModel {
     /// - The current density is lower than or equal to the defined surface density.
     fn is_dm_dr_negligible(&self, log_r: f64, state: &State<f64>) -> bool{
         let derivatives: State<f64> = self.structure.derivatives(log_r, state);
-        let log_rho: f64 = (state.values[1] - self.structure.constants.k.log10()) / self.structure.constants.gamma;
+        let log_rho: f64 = (state.values[1] - self.structure.eos.k.log10()) / self.structure.eos.gamma;
         let rho: f64 = 10f64.powf(log_rho);
 
         derivatives.values[0].abs() < 1e-6 || rho <= self.surface_density
@@ -355,13 +406,13 @@ impl StellarModel {
             let c: f64 = (a + b) / 2.0;
             let p_c: f64 = self.integrate_pressure(r_1, c, p_1, m_1)?;
 
-            let rho_c: f64 = (p_c / self.structure.constants.k).powf(1.0 / self.structure.constants.gamma);
+            let rho_c: f64 = (p_c / self.structure.eos.k).powf(1.0 / self.structure.eos.gamma);
             if (rho_c - self.surface_density).abs() < tolerance {
                 return Ok(c);
             }
 
             let p_a: f64 = self.integrate_pressure(r_1, a, p_1, m_1)?;
-            let rho_a: f64 = (p_a / self.structure.constants.k).powf(1.0 / self.structure.constants.gamma);
+            let rho_a: f64 = (p_a / self.structure.eos.k).powf(1.0 / self.structure.eos.gamma);
             if (rho_c - self.surface_density) * (rho_a - self.surface_density) > 0.0 {
                 a = c;
             } else {
@@ -406,7 +457,7 @@ impl StellarModel {
         let mut r: f64 = r_start;
 
         for _ in 0..n_steps {
-            let rho: f64 = (p / self.structure.constants.k).powf(1.0 / self.structure.constants.gamma);
+            let rho: f64 = (p / self.structure.eos.k).powf(1.0 / self.structure.eos.gamma);
             let dp_dr: f64 = -self.structure.constants.g * m * rho / (r * r);
             p += dp_dr * dr;
             r += dr;
