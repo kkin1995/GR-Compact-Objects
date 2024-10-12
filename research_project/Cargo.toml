@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 gr_compact_objects = { path = ".." }
+thiserror = "1.0"

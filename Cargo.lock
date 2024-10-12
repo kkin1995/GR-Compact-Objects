@@ -32,6 +32,7 @@ name = "research_project"
 version = "0.1.0"
 dependencies = [
  "gr_compact_objects",
+ "thiserror",
 ]
 
 [[package]]
