@@ -458,7 +458,22 @@ impl StellarModel {
 
         for _ in 0..n_steps {
             let rho: f64 = (p / self.structure.eos.k).powf(1.0 / self.structure.eos.gamma);
-            let dp_dr: f64 = -self.structure.constants.g * m * rho / (r * r);
+
+            let dp_dr: f64 = match self.structure.model_type {
+                ModelType::Newton => {
+                    -self.structure.constants.g * m * rho / (r * r)
+                },
+    
+                ModelType::TOV => {
+                    let first_factor = ( - self.structure.constants.g * m ) / ( r * r );
+                    let second_factor = rho + (p / (self.structure.constants.c ));
+                    let third_factor = 1.0 + ((4.0 * PI * p * r * r * r) / (m * self.structure.constants.c * self.structure.constants.c));
+                    let fourth_factor = 1.0 / ( 1.0 - (2.0 * self.structure.constants.g * m) / (r * self.structure.constants.c * self.structure.constants.c) );
+    
+                    first_factor * second_factor * third_factor * fourth_factor
+                }
+            };
+
             p += dp_dr * dr;
             r += dr;
         }
