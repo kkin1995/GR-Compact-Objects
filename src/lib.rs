@@ -45,4 +45,5 @@
 //! - [`rk4`]: Contains the implementation of the RK4 solver.
 //! - [`stellar_structure`]: Contains the module to simulate the internal structure of compact objects for a given metric.
 pub mod rk4;
+pub mod adaptive_rk4;
 pub mod stellar_structure;

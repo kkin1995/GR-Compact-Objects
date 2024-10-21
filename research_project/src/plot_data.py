@@ -15,11 +15,11 @@ def plot_exists(filename):
 
 def load_data(file_path):
     data = pd.read_csv(file_path)
-
+    # Central_Density (g/cm^3),Mass (g),Radius (cm),Pressure (dyn/cm^2)
     if 'r' in data.columns and 'm' in data.columns and 'P' in data.columns:
         data = data.astype({'r': float, 'm': float, 'P': float})
-    elif 'Central_Density' in data.columns and 'Mass' in data.columns and 'Radius' in data.columns:
-        data = data.astype({'Central_Density': float, 'Mass': float, 'Radius': float})
+    elif 'Central_Density (g/cm^3)' in data.columns and 'Mass (g)' in data.columns and 'Radius (cm)' in data.columns:
+        data = data.astype({'Central_Density (g/cm^3)': float, 'Mass (g)': float, 'Radius (cm)': float})
     else:
         print(f"Unexpected column names in {file_path}. Columns found: {data.columns.tolist()}")
 
@@ -93,7 +93,7 @@ def plot_mass_radius_relation(data, relativistic, gas_type, start_density, end_d
         return
     
     plt.figure(figsize=(10,6))
-    plt.scatter(data['Radius'] * 1e-5, data['Mass'] / M_sun, s=15, c='red')
+    plt.scatter(data['Radius (cm)'] * 1e-5, data['Mass (g)'] / M_sun, s=15, c='red')
     plt.xlabel('Radius (R) [km]')
     plt.ylabel('Mass (M / M_sun)')
     plt.title(f"Mass-Radius Relation for {relativistic} {gas_type.replace("_", " ").title()}\nCentral Density: {start_density:.2e} to {end_density:.2e} g/cm^3")
@@ -109,9 +109,9 @@ def plot_combined_mass_radius_relation(non_relativistic_data, relativistic_data,
     
     plt.figure(figsize=(10,6))
     if non_relativistic_data is not None:
-        plt.scatter(non_relativistic_data['Radius'] * 1e-5, non_relativistic_data['Mass'] / M_sun, s=15, c='red', label='Non-Relativistic')
+        plt.scatter(non_relativistic_data['Radius (cm)'] * 1e-5, non_relativistic_data['Mass (g)'] / M_sun, s=15, c='red', label='Non-Relativistic')
     if relativistic_data is not None:
-        plt.scatter(relativistic_data['Radius'] * 1e-5, relativistic_data['Mass'] / M_sun, s=15, c='blue', label='Ultra-Relativistic')
+        plt.scatter(relativistic_data['Radius (cm)'] * 1e-5, relativistic_data['Mass (g)'] / M_sun, s=15, c='blue', label='Ultra-Relativistic')
     plt.xlabel('Radius (R) [km]')
     plt.ylabel('Mass (M / M_sun)')
     plt.title(f"Mass-Radius Relation for {gas_type.replace("_", " ").title()}")

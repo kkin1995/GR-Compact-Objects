@@ -4,7 +4,7 @@
 //! compact body, such as a Neutron Star, using the Runge-Kutta 4th Order (RK4)
 //! integration method. The module includes physical constants, integration parameters,
 //! and functionality to calculate the mass and pressure profiles of a star.
-use crate::rk4::{Derivatives, RK4Solver, State};
+use crate::adaptive_rk4::{Derivatives, AdaptiveRK4Solver, State};
 use std::fs::File;
 use std::io::Write;
 use std::f64::consts::PI;
@@ -82,20 +82,20 @@ pub enum ModelType {
 
 /// Parameters that control the integration process.
 /// 
-/// This struct defines parameters such as the logarithmic step size (`log_dr`) and the model type (`model_type`).
+/// This struct defines parameters such as the logarithmic step size (`dlogr`) and the model type (`model_type`).
 #[derive(Debug, Clone)]
 pub struct IntegrationParams {
-    pub log_dr: f64,
+    pub dlogr: f64,
     pub model_type: ModelType
 }
 
 impl Default for IntegrationParams {
     /// Provides default integration parameters.
     /// 
-    /// Returns a default step size of `0.01` for `log_dr` and `ModelType::Newton` for `model_type`.
+    /// Returns a default step size of `0.01` for `dlogr` and `ModelType::Newton` for `model_type`.
     fn default() -> Self {
         Self {
-            log_dr: 0.01,
+            dlogr: 0.01,
             model_type: ModelType::Newton
         }
     }
@@ -146,7 +146,7 @@ impl Derivatives<f64> for StellarStructure {
     /// 
     /// A `State<f64>` containing the derivatives of the logarithmic mass and pressure.
     fn derivatives(&self, log_r: f64, state: &State<f64>) -> State<f64> {
-        let epsilon: f64 = 1e-10; // Regularization Term
+        let epsilon: f64 = 1e-6; // Regularization Term
         let relative_epsilon = |x: f64| epsilon * (1.0 + x.abs());
         let log_m: f64 = state.values[0];
         let log_p: f64 = state.values[1];
@@ -283,9 +283,9 @@ impl StellarModel {
     pub fn run(&self, output_file: &str) -> Result<(f64, f64, f64), StellarError> {
         let base: f64 = 10.0;
         let log_r_start: f64 = self.r_start.log10();
-        let _log_r_end: f64 = self.r_end.log10();
-        let log_dr: f64 = self.params.log_dr;
-        let _dr: f64 = base.powf(log_dr);
+        // let log_r_end: f64 = self.r_end.log10();
+        // let dlogr: f64 = self.params.dlogr;
+        // let _dr: f64 = base.powf(dlogr);
 
         let log_rho_c: f64 = self.rho_c.log10();
 
@@ -295,7 +295,7 @@ impl StellarModel {
 
         let mut state: State<f64> = State { values: vec![log_m0, log_p0] };
 
-        let solver: RK4Solver<'_, f64, StellarStructure> = RK4Solver::new(&self.structure);
+        let solver: AdaptiveRK4Solver<'_, f64, StellarStructure> = AdaptiveRK4Solver::new(&self.structure);
 
         let mut file = File::create(output_file)?;
         writeln!(file, "r,m,P")?;
@@ -304,6 +304,9 @@ impl StellarModel {
 
         let mut last_valid_state = state.clone();
         let mut last_valid_log_r: f64 = log_r;
+
+        let modulo = 1000;
+        let mut i = 0;
 
         // while log_r < log_r_end {
         while !self.is_dm_dr_negligible(log_r, &state) {
@@ -317,21 +320,34 @@ impl StellarModel {
             
             last_valid_state = state.clone();
             last_valid_log_r = log_r;
-            
-            let next_state: State<f64> = solver.step(log_r, &state, log_dr);
+
+            let derivatives = self.structure.derivatives(log_r, &state);   
+            let adaptive_tuner = self.params.dlogr;
+            let adaptive_dt = (1.0 / (derivatives.values[1].abs() + 1e-10)).clamp(1e-5, 0.01);
+
+            if i % modulo == 0 {
+                println!(
+                    "Iteration: {}, Adaptive Step Size: {}, log_r: {:.5e}, Log Mass: {:.5e}, Log Pressure: {:.5e}",
+                    i, adaptive_dt, log_r, state.values[0], state.values[1]
+                );
+            }
+
+            i = i + 1;
+
+            let next_state: State<f64> = solver.step(log_r, &state, adaptive_dt, adaptive_tuner);
 
             // let log_rho: f64 = (state.values[1] - self.structure.constants.k.log10()) / self.structure.constants.gamma;
             // let next_log_rho: f64 = (next_state.values[1] - self.structure.constants.k.log10()) / self.structure.constants.gamma;
             // let log_rho_diff: f64 = (next_log_rho - log_rho).abs();
 
             // if log_rho_diff > 1e-2 {
-            //     log_dr /= 2.0;
+            //     dlogr /= 2.0;
             // } else if log_rho_diff < 1e-4 {
-            //     log_dr *= 2.0;
+            //     dlogr *= 2.0;
             // }
             
             state = next_state;
-            log_r += log_dr;
+            log_r += adaptive_dt;
         }
 
         if self.is_dm_dr_negligible(log_r, &state) {
@@ -368,7 +384,13 @@ impl StellarModel {
         let log_rho: f64 = (state.values[1] - self.structure.eos.k.log10()) / self.structure.eos.gamma;
         let rho: f64 = 10f64.powf(log_rho);
 
-        derivatives.values[0].abs() < 1e-6 || rho <= self.surface_density
+        let tolerance = if self.rho_c > 1e18 {
+            1e-6 // Less Strict for Higher Central Densities
+        } else {
+            1e-10
+        };
+
+        derivatives.values[0].abs() < tolerance * state.values[0].abs() || rho <= self.surface_density
     }
 
     /// Calculates the total radius of the star using the bisection method.

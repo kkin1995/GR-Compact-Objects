@@ -11,14 +11,14 @@ pub enum SimulationError {
     #[error("Stellar model error: {0}")]
     StellarModelError(#[from] gr_compact_objects::stellar_structure::StellarError),
 }
-fn create_neutron_star_model(k: f64, gamma: f64, model_type: ModelType, r_start: f64, r_end: f64, rho_c: f64, log_dr: f64, surface_density: f64) -> StellarModel {
+fn create_neutron_star_model(k: f64, gamma: f64, model_type: ModelType, r_start: f64, r_end: f64, rho_c: f64, dlogr: f64, surface_density: f64) -> StellarModel {
     let g: f64 = 6.67430e-8; // gravitational constant in CGS
     let c: f64 = 2.99792458e10; // speed of light in CGS
     let surface_pressure: f64 = k * surface_density.powf(gamma);
 
     let eos = EquationOfState {
-        k: k,
-        gamma: gamma
+        k,
+        gamma
     };
 
     let constants = PhysicalConstants {
@@ -27,15 +27,15 @@ fn create_neutron_star_model(k: f64, gamma: f64, model_type: ModelType, r_start:
     };
 
     let integration_params = IntegrationParams {
-        log_dr,
+        dlogr,
         model_type
     };
 
     StellarModel::new(
         eos,
         constants,
-        1.0,
-        1e12,
+        r_start,
+        r_end,
         rho_c,
         Some(integration_params),
         surface_pressure,
@@ -43,8 +43,8 @@ fn create_neutron_star_model(k: f64, gamma: f64, model_type: ModelType, r_start:
     )
 }
 
-fn run_compact_star_simulation(k: f64, gamma: f64, model_type: &ModelType, r_start: f64, r_end: f64, rho_c: f64, log_dr: f64, surface_density: f64, output_file: &str) -> Result<(f64, f64, f64), gr_compact_objects::stellar_structure::StellarError> {
-    let model: StellarModel = create_neutron_star_model(k, gamma, *model_type, r_start, r_end, rho_c, log_dr, surface_density);
+fn run_compact_star_simulation(k: f64, gamma: f64, model_type: &ModelType, r_start: f64, r_end: f64, rho_c: f64, dlogr: f64, surface_density: f64, output_file: &str) -> Result<(f64, f64, f64), gr_compact_objects::stellar_structure::StellarError> {
+    let model: StellarModel = create_neutron_star_model(k, gamma, *model_type, r_start, r_end, rho_c, dlogr, surface_density);
     model.run(output_file)
 }
 
@@ -75,10 +75,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let n: i32 = 6; // Replace this with the desired number of values
     let gas_type: &str = "relativistic_neutron_gas";
     let mu_e: f64 = 2.0;
-    let r_start: f64 = 0.001;
-    let r_end: f64 = 1e12;
-    let log_dr: f64 = 0.001;
-    let surface_density: f64 = 1.0;
+    let r_start: f64 = 10.0;
+    let r_end: f64 = 1e8;
+    let dlogr: f64 = 0.001;
+    let surface_density: f64 = 1e3;
 
     let (start, end, k, gamma, model_type) = get_gas_parameters(gas_type, mu_e);
 
@@ -95,14 +95,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut file = File::create(&summary_file)?;
     writeln!(file, "Central_Density (g/cm^3),Mass (g),Radius (cm),Pressure (dyn/cm^2)")?;
 
-    let error_log_file = format!("/Users/karankinariwala/Dropbox/KARAN/2 Areas/Education/PhD/gr_compact_objects/research_project/data/{gas_type}_error_log.txt");
+    let error_log_file = format!("/Users/karankinariwala/Dropbox/KARAN/2 Areas/Education/PhD/gr_compact_objects/research_project/logs/{gas_type}_error_log.txt");
     let mut error_log = File::create(&error_log_file)?;
 
     for (i, &central_density) in central_densities.iter().enumerate() {
 
         let output_file: String = format!("/Users/karankinariwala/Dropbox/KARAN/2 Areas/Education/PhD/gr_compact_objects/research_project/data/{gas_type}_profile_central_density_{central_density:.2e}.csv");
         
-        match run_compact_star_simulation(k, gamma, &model_type, r_start, r_end, central_density, log_dr, surface_density, &output_file) {
+        match run_compact_star_simulation(k, gamma, &model_type, r_start, r_end, central_density, dlogr, surface_density, &output_file) {
             Ok((final_radius, final_mass, final_pressure)) => {
                 writeln!(file, "{},{},{},{}", central_density, final_mass, final_radius, final_pressure)?;
 
